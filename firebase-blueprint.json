@@ -1,0 +1,252 @@
+{
+  "entities": {
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Private user account metadata and global currency/cosmetic settings isolated to owner.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the account owner." },
+        "username": { "type": "string", "description": "Player display handle (3..24 chars)." },
+        "email": { "type": "string", "description": "Optional owner email (private)." },
+        "skinColor": { "type": "integer", "description": "Selected blocky character skin palette index." },
+        "hatId": { "type": "string", "description": "Selected cosmetic hat ID." },
+        "globalCoins": { "type": "integer", "description": "Global network coins." },
+        "globalGems": { "type": "integer", "description": "Global network gems." },
+        "globalXp": { "type": "integer", "description": "Global XP." },
+        "globalLevel": { "type": "integer", "description": "Global level 1..40 (Komur 1..Pro 5)." },
+        "preferredNetworkId": { "type": "string", "description": "Last active network ID." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["userId", "username", "skinColor", "hatId", "globalCoins", "globalGems", "globalXp", "globalLevel", "preferredNetworkId", "createdAt", "updatedAt"]
+    },
+    "GameNetwork": {
+      "title": "GameNetwork",
+      "description": "Official or player-created independent server network with isolated policies, staff, and servers.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Network name (3..40 chars)." },
+        "description": { "type": "string", "description": "Network summary." },
+        "policyText": { "type": "string", "description": "Network rules and moderation policy." },
+        "founderUid": { "type": "string", "description": "UID of the network founder." },
+        "founderName": { "type": "string", "description": "Display name of the founder." },
+        "official": { "type": "boolean", "description": "True only for official DenizCraft network." },
+        "active": { "type": "boolean", "description": "True while network is active." },
+        "maintenanceMode": { "type": "boolean", "description": "True when network is in staff-only maintenance mode." },
+        "playerCount": { "type": "integer", "description": "Estimated online players." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "description", "policyText", "founderUid", "founderName", "official", "active", "playerCount", "createdAt", "updatedAt"]
+    },
+    "NetworkMember": {
+      "title": "NetworkMember",
+      "description": "Per-network player state including rank, level, resources, gamemode, inventory, and punishments.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "networkId": { "type": "string" },
+        "username": { "type": "string" },
+        "rank": {
+          "type": "string",
+          "enum": ["KURUCU", "YONETICI", "MODERATOR", "YARDIMCI", "MIMAR", "AKADEMI", "MEDYA", "YAYINCI", "YOUTUBE", "TIKTOK", "DVIP_PP", "MVIP_P", "MVIP", "VIP_P", "VIP", "OYUNCU"]
+        },
+        "level": { "type": "integer" },
+        "xp": { "type": "integer" },
+        "coins": { "type": "integer" },
+        "gems": { "type": "integer" },
+        "gameMode": {
+          "type": "string",
+          "enum": ["SURVIVAL", "CREATIVE", "ADVENTURE", "SPECTATOR"]
+        },
+        "inventoryJson": { "type": "string" },
+        "banned": { "type": "boolean" },
+        "banReason": { "type": "string" },
+        "banUntilMillis": { "type": "integer" },
+        "muted": { "type": "boolean" },
+        "muteReason": { "type": "string" },
+        "muteUntilMillis": { "type": "integer" },
+        "warningsCount": { "type": "integer" },
+        "skinColor": { "type": "integer" },
+        "lastDailyBonusAt": { "type": "string", "format": "date-time", "description": "Server timestamp of the last 24h daily bonus claim." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "networkId", "username", "rank", "level", "xp", "coins", "gems", "gameMode", "inventoryJson", "banned", "banReason", "banUntilMillis", "muted", "muteReason", "muteUntilMillis", "warningsCount", "skinColor", "createdAt", "updatedAt"]
+    },
+    "GameRoom": {
+      "title": "GameRoom",
+      "description": "Multiplayer match or lobby room for a specific server type and map.",
+      "type": "object",
+      "properties": {
+        "networkId": { "type": "string" },
+        "serverType": {
+          "type": "string",
+          "enum": ["LOBI", "BEDWARS", "SKYWARS", "SKYBLOCK", "SURVIVAL", "BUILD_BATTLE", "CREATIVE"]
+        },
+        "mapName": { "type": "string" },
+        "waitingMapName": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["WAITING", "PLAYING", "VOTING", "FINISHED"]
+        },
+        "hostUid": { "type": "string" },
+        "maxPlayers": { "type": "integer" },
+        "playerCount": { "type": "integer" },
+        "theme": { "type": "string" },
+        "winnerName": { "type": "string" },
+        "matchStartAtMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["networkId", "serverType", "mapName", "waitingMapName", "status", "hostUid", "maxPlayers", "playerCount", "theme", "winnerName", "createdAt", "updatedAt"]
+    },
+    "RoomPlayer": {
+      "title": "RoomPlayer",
+      "description": "Real-time player transform and health inside a multiplayer room.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "roomId": { "type": "string" },
+        "networkId": { "type": "string" },
+        "username": { "type": "string" },
+        "rank": { "type": "string" },
+        "level": { "type": "integer" },
+        "team": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "yaw": { "type": "number" },
+        "hp": { "type": "integer" },
+        "alive": { "type": "boolean" },
+        "skinColor": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "roomId", "networkId", "username", "rank", "level", "team", "x", "y", "z", "yaw", "hp", "alive", "skinColor", "updatedAt"]
+    },
+    "RoomBlock": {
+      "title": "RoomBlock",
+      "description": "Synchronized voxel block placement or removal inside a multiplayer room.",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string" },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "z": { "type": "integer" },
+        "blockType": { "type": "string" },
+        "placedBy": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "x", "y", "z", "blockType", "placedBy", "updatedAt"]
+    },
+    "RoomChatMessage": {
+      "title": "RoomChatMessage",
+      "description": "Real-time chat message in a lobby or match room.",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string" },
+        "networkId": { "type": "string" },
+        "senderUid": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderRank": { "type": "string" },
+        "senderLevel": { "type": "integer" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "networkId", "senderUid", "senderName", "senderRank", "senderLevel", "text", "createdAt"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "Player support ticket inside a specific network.",
+      "type": "object",
+      "properties": {
+        "networkId": { "type": "string" },
+        "authorUid": { "type": "string" },
+        "authorName": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["OPEN", "ANSWERED", "CLOSED"] },
+        "staffReply": { "type": "string" },
+        "repliedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["networkId", "authorUid", "authorName", "subject", "message", "status", "staffReply", "repliedBy", "createdAt", "updatedAt"]
+    },
+    "PlayerReport": {
+      "title": "PlayerReport",
+      "description": "Player violation report inside a specific network.",
+      "type": "object",
+      "properties": {
+        "networkId": { "type": "string" },
+        "reporterUid": { "type": "string" },
+        "reporterName": { "type": "string" },
+        "targetUid": { "type": "string" },
+        "targetName": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "ACCEPTED", "REJECTED"] },
+        "reviewedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["networkId", "reporterUid", "reporterName", "targetUid", "targetName", "reason", "status", "reviewedBy", "createdAt", "updatedAt"]
+    },
+    "PlayerPlot": {
+      "title": "PlayerPlot",
+      "description": "Saved Creative plot or Skyblock island tied to a player account on a network.",
+      "type": "object",
+      "properties": {
+        "ownerUid": { "type": "string" },
+        "networkId": { "type": "string" },
+        "mode": { "type": "string", "enum": ["CREATIVE", "SKYBLOCK"] },
+        "plotName": { "type": "string" },
+        "blocksData": { "type": "string" },
+        "islandLevel": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerUid", "networkId", "mode", "plotName", "blocksData", "islandLevel", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserAccount" },
+      "description": "Private owner-scoped account document."
+    },
+    "/networks/{networkId}": {
+      "schema": { "$ref": "#/entities/GameNetwork" },
+      "description": "Official and independent game networks."
+    },
+    "/networks/{networkId}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/NetworkMember" },
+      "description": "Per-network player profiles, ranks, levels, and moderation flags."
+    },
+    "/networks/{networkId}/rooms/{roomId}": {
+      "schema": { "$ref": "#/entities/GameRoom" },
+      "description": "Live multiplayer server rooms per network."
+    },
+    "/networks/{networkId}/rooms/{roomId}/players/{playerUid}": {
+      "schema": { "$ref": "#/entities/RoomPlayer" },
+      "description": "Real-time player coordinates and stats in a room."
+    },
+    "/networks/{networkId}/rooms/{roomId}/blocks/{blockKey}": {
+      "schema": { "$ref": "#/entities/RoomBlock" },
+      "description": "Synchronized block edits in a room."
+    },
+    "/networks/{networkId}/rooms/{roomId}/chat/{messageId}": {
+      "schema": { "$ref": "#/entities/RoomChatMessage" },
+      "description": "Real-time chat messages in a room."
+    },
+    "/networks/{networkId}/tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/SupportTicket" },
+      "description": "Player support tickets for a network."
+    },
+    "/networks/{networkId}/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/PlayerReport" },
+      "description": "Player violation reports for a network."
+    },
+    "/networks/{networkId}/plots/{plotId}": {
+      "schema": { "$ref": "#/entities/PlayerPlot" },
+      "description": "Persistent Creative plots and Skyblock islands."
+    }
+  }
+}

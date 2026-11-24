@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Isometric Voxel Block Base -->
+    <!-- Top face (Aqua Emerald) -->
+    <path
+        android:pathData="M54,28 L76,40 L54,52 L32,40 Z"
+        android:fillColor="#26C6DA" />
+    <!-- Left face (Ocean Blue) -->
+    <path
+        android:pathData="M32,40 L54,52 L54,78 L32,66 Z"
+        android:fillColor="#0277BD" />
+    <!-- Right face (Deep Navy) -->
+    <path
+        android:pathData="M54,52 L76,40 L76,66 L54,78 Z"
+        android:fillColor="#01579B" />
+    <!-- Golden Crown / Pickaxe Crest on top -->
+    <path
+        android:pathData="M42,36 L48,26 L54,32 L60,26 L66,36 L66,42 L42,42 Z"
+        android:fillColor="#FFB300" />
+    <!-- Crisp Sword Blade Accent -->
+    <path
+        android:pathData="M51,38 L57,38 L57,64 L54,68 L51,64 Z"
+        android:fillColor="#E0F7FA" />
+    <path
+        android:pathData="M46,60 L62,60 L62,64 L46,64 Z"
+        android:fillColor="#FFCA28" />
+    <path
+        android:pathData="M52,64 L56,64 L56,72 L52,72 Z"
+        android:fillColor="#795548" />
+</vector>

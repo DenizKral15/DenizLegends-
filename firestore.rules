@@ -1,0 +1,559 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Pillar 4.1: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOfficialAdmin() {
+      return isSignedIn() &&
+             'email' in request.auth.token &&
+             'email_verified' in request.auth.token &&
+             request.auth.token.email == 'hediyeergezer4@gmail.com' &&
+             request.auth.token.email_verified == true;
+    }
+
+    function isValidRank(r) {
+      return r in [
+        'KURUCU', 'YONETICI', 'MODERATOR', 'YARDIMCI', 'MIMAR', 'AKADEMI',
+        'MEDYA', 'YAYINCI', 'YOUTUBE', 'TIKTOK',
+        'DVIP_PP', 'MVIP_P', 'MVIP', 'VIP_P', 'VIP', 'OYUNCU'
+      ];
+    }
+
+    function isValidGameMode(m) {
+      return m in ['SURVIVAL', 'CREATIVE', 'ADVENTURE', 'SPECTATOR'];
+    }
+
+    function isValidServerType(s) {
+      return s in ['LOBI', 'BEDWARS', 'SKYWARS', 'SKYBLOCK', 'SURVIVAL', 'BUILD_BATTLE', 'CREATIVE'];
+    }
+
+    // --- RELATIONAL NETWORK ROLE LOOKUPS (never used in allow list) ---
+    function isNetworkFounder(networkId) {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/networks/$(networkId)) &&
+             get(/databases/$(database)/documents/networks/$(networkId)).data.founderUid == request.auth.uid;
+    }
+
+    function memberExists(networkId, uid) {
+      return exists(/databases/$(database)/documents/networks/$(networkId)/members/$(uid));
+    }
+
+    function memberRank(networkId, uid) {
+      return get(/databases/$(database)/documents/networks/$(networkId)/members/$(uid)).data.rank;
+    }
+
+    function isNetworkKurucu(networkId) {
+      return isOfficialAdmin() ||
+             isNetworkFounder(networkId) ||
+             (isSignedIn() && memberExists(networkId, request.auth.uid) && memberRank(networkId, request.auth.uid) == 'KURUCU');
+    }
+
+    function isNetworkYonetici(networkId) {
+      return isSignedIn() && memberExists(networkId, request.auth.uid) && memberRank(networkId, request.auth.uid) == 'YONETICI';
+    }
+
+    function isNetworkMod(networkId) {
+      return isSignedIn() && memberExists(networkId, request.auth.uid) && memberRank(networkId, request.auth.uid) == 'MODERATOR';
+    }
+
+    function isNetworkYardimci(networkId) {
+      return isSignedIn() && memberExists(networkId, request.auth.uid) && memberRank(networkId, request.auth.uid) == 'YARDIMCI';
+    }
+
+    function isNetworkBuilderOrAbove(networkId) {
+      return isNetworkKurucu(networkId) ||
+             isNetworkYonetici(networkId) ||
+             isNetworkMod(networkId) ||
+             isNetworkYardimci(networkId) ||
+             (isSignedIn() && memberExists(networkId, request.auth.uid) && memberRank(networkId, request.auth.uid) in ['MIMAR', 'AKADEMI']);
+    }
+
+    function isStaffSupportOrAbove(networkId) {
+      return isNetworkKurucu(networkId) || isNetworkYonetici(networkId) || isNetworkMod(networkId) || isNetworkYardimci(networkId);
+    }
+
+    function isStaffModOrAbove(networkId) {
+      return isNetworkKurucu(networkId) || isNetworkYonetici(networkId) || isNetworkMod(networkId);
+    }
+
+    function isMemberMuted(networkId, uid) {
+      return memberExists(networkId, uid) &&
+             get(/databases/$(database)/documents/networks/$(networkId)/members/$(uid)).data.muted == true;
+    }
+
+    function isMemberBanned(networkId, uid) {
+      let memberPath = /databases/$(database)/documents/networks/$(networkId)/members/$(uid);
+      return exists(memberPath) &&
+             get(memberPath).data.banned == true &&
+             (get(memberPath).data.banUntilMillis == 0 ||
+              get(memberPath).data.banUntilMillis > request.time.toMillis());
+    }
+
+    function isNetworkInMaintenance(networkId) {
+      let netPath = /databases/$(database)/documents/networks/$(networkId);
+      return exists(netPath) &&
+             ('maintenanceMode' in get(netPath).data) &&
+             get(netPath).data.maintenanceMode == true;
+    }
+
+    function canModifyRoomBlock(networkId, roomId) {
+      let roomPath = /databases/$(database)/documents/networks/$(networkId)/rooms/$(roomId);
+      return !exists(roomPath) ||
+             isNetworkBuilderOrAbove(networkId) ||
+             (get(roomPath).data.serverType != 'LOBI' && get(roomPath).data.status == 'PLAYING');
+    }
+
+    // --- ENTITY VALIDATION BLUEPRINTS ---
+    function isValidUserAccount(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.username is string && data.username.size() >= 2 && data.username.size() <= 24 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+             data.skinColor is int && data.skinColor >= 0 && data.skinColor <= 32 &&
+             data.hatId is string && data.hatId.size() <= 40 &&
+             data.globalCoins is int && data.globalCoins >= 0 &&
+             data.globalGems is int && data.globalGems >= 0 &&
+             data.globalXp is int && data.globalXp >= 0 &&
+             data.globalLevel is int && data.globalLevel >= 1 && data.globalLevel <= 40 &&
+             data.preferredNetworkId is string && data.preferredNetworkId.size() >= 1 && data.preferredNetworkId.size() <= 128 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidGameNetwork(data) {
+      return data.name is string && data.name.size() >= 3 && data.name.size() <= 40 &&
+             data.description is string && data.description.size() <= 200 &&
+             data.policyText is string && data.policyText.size() <= 500 &&
+             data.founderUid is string && data.founderUid.size() >= 1 && data.founderUid.size() <= 128 &&
+             data.founderName is string && data.founderName.size() >= 2 && data.founderName.size() <= 24 &&
+             data.official is bool &&
+             data.active is bool &&
+             (!('maintenanceMode' in data) || data.maintenanceMode is bool) &&
+             data.playerCount is int && data.playerCount >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidNetworkMember(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.networkId is string && data.networkId.size() >= 1 && data.networkId.size() <= 128 &&
+             data.username is string && data.username.size() >= 2 && data.username.size() <= 24 &&
+             isValidRank(data.rank) &&
+             data.level is int && data.level >= 1 && data.level <= 40 &&
+             data.xp is int && data.xp >= 0 &&
+             data.coins is int && data.coins >= 0 &&
+             data.gems is int && data.gems >= 0 &&
+             isValidGameMode(data.gameMode) &&
+             data.inventoryJson is string && data.inventoryJson.size() <= 8000 &&
+             data.banned is bool &&
+             data.banReason is string && data.banReason.size() <= 200 &&
+             data.banUntilMillis is int && data.banUntilMillis >= 0 &&
+             data.muted is bool &&
+             data.muteReason is string && data.muteReason.size() <= 200 &&
+             data.muteUntilMillis is int && data.muteUntilMillis >= 0 &&
+             data.warningsCount is int && data.warningsCount >= 0 &&
+             data.skinColor is int && data.skinColor >= 0 && data.skinColor <= 32 &&
+             (!('lastDailyBonusAt' in data) || data.lastDailyBonusAt == null || (data.lastDailyBonusAt is timestamp && data.lastDailyBonusAt <= request.time)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidGameRoom(data) {
+      return data.networkId is string && data.networkId.size() >= 1 && data.networkId.size() <= 128 &&
+             isValidServerType(data.serverType) &&
+             data.mapName is string && data.mapName.size() >= 2 && data.mapName.size() <= 60 &&
+             data.waitingMapName is string && data.waitingMapName.size() >= 2 && data.waitingMapName.size() <= 60 &&
+             data.status in ['WAITING', 'PLAYING', 'VOTING', 'FINISHED'] &&
+             data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128 &&
+             data.maxPlayers is int && data.maxPlayers >= 2 && data.maxPlayers <= 24 &&
+             data.playerCount is int && data.playerCount >= 0 && data.playerCount <= 24 &&
+             data.theme is string && data.theme.size() <= 60 &&
+             data.winnerName is string && data.winnerName.size() <= 40 &&
+             (!('matchStartAtMillis' in data) || (data.matchStartAtMillis is int && data.matchStartAtMillis >= 0)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidRoomPlayer(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 128 &&
+             data.networkId is string && data.networkId.size() >= 1 && data.networkId.size() <= 128 &&
+             data.username is string && data.username.size() >= 2 && data.username.size() <= 24 &&
+             isValidRank(data.rank) &&
+             data.level is int && data.level >= 1 && data.level <= 40 &&
+             data.team in ['MAVI', 'KIRMIZI', 'YESIL', 'SARI', 'NONE'] &&
+             data.x is number && data.y is number && data.z is number && data.yaw is number &&
+             data.hp is int && data.hp >= 0 && data.hp <= 20 &&
+             data.alive is bool &&
+             data.skinColor is int && data.skinColor >= 0 && data.skinColor <= 32 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidRoomBlock(data) {
+      return data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 128 &&
+             data.x is int && data.x >= -64 && data.x <= 64 &&
+             data.y is int && data.y >= -16 && data.y <= 64 &&
+             data.z is int && data.z >= -64 && data.z <= 64 &&
+             data.blockType is string && data.blockType.size() >= 1 && data.blockType.size() <= 32 &&
+             data.placedBy is string && data.placedBy.size() >= 1 && data.placedBy.size() <= 128 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidChatMessage(data) {
+      return data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 128 &&
+             data.networkId is string && data.networkId.size() >= 1 && data.networkId.size() <= 128 &&
+             data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+             data.senderName is string && data.senderName.size() >= 2 && data.senderName.size() <= 24 &&
+             isValidRank(data.senderRank) &&
+             data.senderLevel is int && data.senderLevel >= 1 && data.senderLevel <= 40 &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 200 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidRoomInteraction(data) {
+      return data.roomId is string && data.roomId.size() >= 1 && data.roomId.size() <= 128 &&
+             data.networkId is string && data.networkId.size() >= 1 && data.networkId.size() <= 128 &&
+             data.fromUid is string && data.fromUid.size() >= 1 && data.fromUid.size() <= 128 &&
+             data.fromName is string && data.fromName.size() >= 2 && data.fromName.size() <= 24 &&
+             data.targetUid is string && data.targetUid.size() >= 1 && data.targetUid.size() <= 128 &&
+             data.actionType in ['HIT', 'GIFT_COIN', 'GIFT_ITEM', 'WAVE'] &&
+             data.amount is int && data.amount >= 0 && data.amount <= 1000 &&
+             data.itemId is string && data.itemId.size() <= 40 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidSupportTicket(data) {
+      return data.networkId is string && data.networkId.size() >= 1 && data.networkId.size() <= 128 &&
+             data.authorUid is string && data.authorUid.size() >= 1 && data.authorUid.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 2 && data.authorName.size() <= 24 &&
+             data.subject is string && data.subject.size() >= 3 && data.subject.size() <= 80 &&
+             data.message is string && data.message.size() >= 3 && data.message.size() <= 400 &&
+             data.status in ['OPEN', 'ANSWERED', 'CLOSED'] &&
+             data.staffReply is string && data.staffReply.size() <= 400 &&
+             data.repliedBy is string && data.repliedBy.size() <= 30 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPlayerReport(data) {
+      return data.networkId is string && data.networkId.size() >= 1 && data.networkId.size() <= 128 &&
+             data.reporterUid is string && data.reporterUid.size() >= 1 && data.reporterUid.size() <= 128 &&
+             data.reporterName is string && data.reporterName.size() >= 2 && data.reporterName.size() <= 24 &&
+             data.targetUid is string && data.targetUid.size() >= 1 && data.targetUid.size() <= 128 &&
+             data.targetName is string && data.targetName.size() >= 2 && data.targetName.size() <= 24 &&
+             data.reason is string && data.reason.size() >= 3 && data.reason.size() <= 200 &&
+             data.status in ['PENDING', 'ACCEPTED', 'REJECTED'] &&
+             data.reviewedBy is string && data.reviewedBy.size() <= 30 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPlayerPlot(data) {
+      return data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 &&
+             data.networkId is string && data.networkId.size() >= 1 && data.networkId.size() <= 128 &&
+             data.mode in ['CREATIVE', 'SKYBLOCK'] &&
+             data.plotName is string && data.plotName.size() >= 2 && data.plotName.size() <= 40 &&
+             data.blocksData is string && data.blocksData.size() <= 20000 &&
+             data.islandLevel is int && data.islandLevel >= 1 && data.islandLevel <= 9999 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // --- 1. USERS (Strict PII isolation) ---
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() && isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'username', 'skinColor', 'hatId', 'globalCoins', 'globalGems', 'globalXp', 'globalLevel', 'preferredNetworkId', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'username', 'email', 'skinColor', 'hatId', 'globalCoins', 'globalGems', 'globalXp', 'globalLevel', 'preferredNetworkId', 'createdAt', 'updatedAt']) &&
+                       isValidUserAccount(incoming());
+
+      allow update: if isSignedIn() && isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidUserAccount(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['username', 'email', 'skinColor', 'hatId', 'globalCoins', 'globalGems', 'globalXp', 'globalLevel', 'preferredNetworkId', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    // --- 2. NETWORKS (Official + Independent Networks) ---
+    match /networks/{networkId} {
+      allow get: if isSignedIn() && isValidId(networkId);
+      allow list: if isSignedIn() && existing().active == true;
+
+      allow create: if isSignedIn() && isValidId(networkId) &&
+                       incoming().keys().hasAll(['name', 'description', 'policyText', 'founderUid', 'founderName', 'official', 'active', 'playerCount', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['name', 'description', 'policyText', 'founderUid', 'founderName', 'official', 'active', 'maintenanceMode', 'playerCount', 'createdAt', 'updatedAt']) &&
+                       isValidGameNetwork(incoming()) &&
+                       incoming().founderUid == request.auth.uid &&
+                       incoming().active == true &&
+                       ((networkId == 'official' && incoming().official == true && isOfficialAdmin()) ||
+                        (networkId != 'official' && incoming().official == false));
+
+      allow update: if isSignedIn() && isValidId(networkId) &&
+                       isValidGameNetwork(incoming()) &&
+                       incoming().founderUid == existing().founderUid &&
+                       incoming().official == existing().official &&
+                       incoming().createdAt == existing().createdAt && (
+                         ((isOfficialAdmin() || existing().founderUid == request.auth.uid || isNetworkKurucu(networkId)) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'policyText', 'active', 'maintenanceMode', 'playerCount', 'updatedAt'])) ||
+                         (isNetworkYonetici(networkId) &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['maintenanceMode', 'updatedAt']))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(networkId) &&
+                       networkId != 'official' &&
+                       (isOfficialAdmin() || existing().founderUid == request.auth.uid || isNetworkKurucu(networkId));
+
+      // --- 2a. PER-NETWORK MEMBERS (Ranks, Levels, Resources, Bans, Mutes, Warnings) ---
+      match /members/{memberUid} {
+        allow get: if isSignedIn() && isValidId(networkId) && isValidId(memberUid);
+        allow list: if isSignedIn() && existing().networkId == networkId;
+
+        allow create: if isSignedIn() && isValidId(networkId) && isValidId(memberUid) &&
+                         request.auth.uid == memberUid &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().networkId == networkId &&
+                         incoming().keys().hasAll(['userId', 'networkId', 'username', 'rank', 'level', 'xp', 'coins', 'gems', 'gameMode', 'inventoryJson', 'banned', 'banReason', 'banUntilMillis', 'muted', 'muteReason', 'muteUntilMillis', 'warningsCount', 'skinColor', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'networkId', 'username', 'rank', 'level', 'xp', 'coins', 'gems', 'gameMode', 'inventoryJson', 'banned', 'banReason', 'banUntilMillis', 'muted', 'muteReason', 'muteUntilMillis', 'warningsCount', 'skinColor', 'createdAt', 'updatedAt']) &&
+                         isValidNetworkMember(incoming()) &&
+                         incoming().banned == false &&
+                         incoming().muted == false &&
+                         incoming().warningsCount == 0 &&
+                         (incoming().rank == 'OYUNCU' ||
+                          (incoming().rank == 'KURUCU' && (isNetworkFounder(networkId) || (networkId == 'official' && isOfficialAdmin()))));
+
+        allow update: if isSignedIn() && isValidId(networkId) && isValidId(memberUid) &&
+                         isValidNetworkMember(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().networkId == existing().networkId &&
+                         incoming().createdAt == existing().createdAt && (
+                           // Branch 1: Kurucu / Founder / OfficialAdmin -> Full rights, but Kurucu cannot demote or punish their own Kurucu account
+                           (isNetworkKurucu(networkId) &&
+                            (!(existing().rank == 'KURUCU' && request.auth.uid == memberUid) ||
+                             (incoming().rank == 'KURUCU' && incoming().banned == false && incoming().muted == false)) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['username', 'rank', 'level', 'xp', 'coins', 'gems', 'gameMode', 'inventoryJson', 'banned', 'banReason', 'banUntilMillis', 'muted', 'muteReason', 'muteUntilMillis', 'warningsCount', 'skinColor', 'updatedAt'])) ||
+                           // Branch 2: Self update -> Only cosmetic/progress fields (plus 24h-gated daily bonus), NEVER rank/punishments/gameMode, blocked while actively banned
+                           (request.auth.uid == memberUid &&
+                            !isMemberBanned(networkId, request.auth.uid) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['username', 'xp', 'level', 'coins', 'gems', 'inventoryJson', 'skinColor', 'lastDailyBonusAt', 'updatedAt']) &&
+                            (!('lastDailyBonusAt' in incoming().diff(existing()).affectedKeys()) ||
+                             ((!('lastDailyBonusAt' in existing()) ||
+                               existing().lastDailyBonusAt == null ||
+                               request.time.toMillis() >= existing().lastDailyBonusAt.toMillis() + 86400000) &&
+                              incoming().lastDailyBonusAt is timestamp &&
+                              incoming().lastDailyBonusAt <= request.time &&
+                              incoming().lastDailyBonusAt >= request.time - duration.value(60, 's') &&
+                              incoming().coins <= existing().coins + 250 &&
+                              incoming().gems <= existing().gems + 5))) ||
+                           // Branch 3: Yonetici (Admin) -> Full admin panel EXCEPT cannot assign Kurucu/Admin or punish Kurucu/Admin
+                           (isNetworkYonetici(networkId) &&
+                            !(existing().rank in ['KURUCU', 'YONETICI']) &&
+                            !(incoming().rank in ['KURUCU', 'YONETICI']) &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['rank', 'level', 'xp', 'coins', 'gems', 'gameMode', 'inventoryJson', 'banned', 'banReason', 'banUntilMillis', 'muted', 'muteReason', 'muteUntilMillis', 'warningsCount', 'updatedAt'])) ||
+                           // Branch 4: Moderator -> Support & Moderation only (Ban/Mute/Warn), cannot touch Kurucu
+                           (isNetworkMod(networkId) &&
+                            existing().rank != 'KURUCU' &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['banned', 'banReason', 'banUntilMillis', 'muted', 'muteReason', 'muteUntilMillis', 'warningsCount', 'updatedAt'])) ||
+                           // Branch 5: Yardimci -> Mute & Support only, cannot touch Kurucu
+                           (isNetworkYardimci(networkId) &&
+                            existing().rank != 'KURUCU' &&
+                            incoming().diff(existing()).affectedKeys().hasOnly(['muted', 'muteReason', 'muteUntilMillis', 'updatedAt']))
+                         );
+      }
+
+      // --- 2b. GAME ROOMS ---
+      match /rooms/{roomId} {
+        allow get: if isSignedIn() && isValidId(networkId) && isValidId(roomId);
+        allow list: if isSignedIn() && existing().networkId == networkId;
+
+        allow create: if isSignedIn() && isValidId(networkId) && isValidId(roomId) &&
+                         !isMemberBanned(networkId, request.auth.uid) &&
+                         (!isNetworkInMaintenance(networkId) || isStaffSupportOrAbove(networkId)) &&
+                         incoming().networkId == networkId &&
+                         incoming().hostUid == request.auth.uid &&
+                         incoming().keys().hasAll(['networkId', 'serverType', 'mapName', 'waitingMapName', 'status', 'hostUid', 'maxPlayers', 'playerCount', 'theme', 'winnerName', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['networkId', 'serverType', 'mapName', 'waitingMapName', 'status', 'hostUid', 'maxPlayers', 'playerCount', 'theme', 'winnerName', 'matchStartAtMillis', 'createdAt', 'updatedAt']) &&
+                         isValidGameRoom(incoming());
+
+        allow update: if isSignedIn() && isValidId(networkId) && isValidId(roomId) &&
+                         !isMemberBanned(networkId, request.auth.uid) &&
+                         (!isNetworkInMaintenance(networkId) || isStaffSupportOrAbove(networkId)) &&
+                         isValidGameRoom(incoming()) &&
+                         (existing().status != 'FINISHED' || isNetworkKurucu(networkId)) &&
+                         incoming().networkId == existing().networkId &&
+                         incoming().hostUid == existing().hostUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'playerCount', 'theme', 'winnerName', 'matchStartAtMillis', 'updatedAt']);
+
+        // Room Players (Real-time multiplayer presence)
+        match /players/{playerUid} {
+          allow get: if isSignedIn() && isValidId(roomId) && isValidId(playerUid);
+          allow list: if isSignedIn() && existing().roomId == roomId;
+
+          allow create, update: if isSignedIn() && isValidId(roomId) && isValidId(playerUid) &&
+                                   request.auth.uid == playerUid &&
+                                   !isMemberBanned(networkId, request.auth.uid) &&
+                                   (!isNetworkInMaintenance(networkId) || isStaffSupportOrAbove(networkId)) &&
+                                   incoming().userId == request.auth.uid &&
+                                   incoming().roomId == roomId &&
+                                   incoming().networkId == networkId &&
+                                   incoming().keys().hasAll(['userId', 'roomId', 'networkId', 'username', 'rank', 'level', 'team', 'x', 'y', 'z', 'yaw', 'hp', 'alive', 'skinColor', 'updatedAt']) &&
+                                   incoming().keys().hasOnly(['userId', 'roomId', 'networkId', 'username', 'rank', 'level', 'team', 'x', 'y', 'z', 'yaw', 'hp', 'alive', 'skinColor', 'updatedAt']) &&
+                                   isValidRoomPlayer(incoming());
+
+          allow delete: if isSignedIn() && isValidId(networkId) && isValidId(roomId) && isValidId(playerUid) &&
+                           (request.auth.uid == playerUid || isStaffModOrAbove(networkId));
+        }
+
+        // Room Blocks (Synced block placement/breaking - protected in LOBI & WAITING for non-staff)
+        match /blocks/{blockKey} {
+          allow get: if isSignedIn() && isValidId(roomId) && isValidId(blockKey);
+          allow list: if isSignedIn() && existing().roomId == roomId;
+
+          allow create, update: if isSignedIn() && isValidId(roomId) && isValidId(blockKey) &&
+                                   !isMemberBanned(networkId, request.auth.uid) &&
+                                   (!isNetworkInMaintenance(networkId) || isStaffSupportOrAbove(networkId)) &&
+                                   canModifyRoomBlock(networkId, roomId) &&
+                                   incoming().roomId == roomId &&
+                                   incoming().placedBy == request.auth.uid &&
+                                   incoming().keys().hasAll(['roomId', 'x', 'y', 'z', 'blockType', 'placedBy', 'updatedAt']) &&
+                                   incoming().keys().hasOnly(['roomId', 'x', 'y', 'z', 'blockType', 'placedBy', 'updatedAt']) &&
+                                   isValidRoomBlock(incoming());
+        }
+
+        // Room Chat (Enforces Mute & Ban checks!)
+        match /chat/{messageId} {
+          allow get: if isSignedIn() && isValidId(roomId) && isValidId(messageId);
+          allow list: if isSignedIn() && existing().roomId == roomId;
+
+          allow create: if isSignedIn() && isValidId(roomId) && isValidId(messageId) &&
+                           incoming().roomId == roomId &&
+                           incoming().networkId == networkId &&
+                           incoming().senderUid == request.auth.uid &&
+                           !isMemberMuted(networkId, request.auth.uid) &&
+                           !isMemberBanned(networkId, request.auth.uid) &&
+                           (!isNetworkInMaintenance(networkId) || isStaffSupportOrAbove(networkId)) &&
+                           incoming().keys().hasAll(['roomId', 'networkId', 'senderUid', 'senderName', 'senderRank', 'senderLevel', 'text', 'createdAt']) &&
+                           incoming().keys().hasOnly(['roomId', 'networkId', 'senderUid', 'senderName', 'senderRank', 'senderLevel', 'text', 'createdAt']) &&
+                           isValidChatMessage(incoming());
+        }
+
+        // Room Player Interactions (PvP Hits, Gifts, Waves)
+        match /interactions/{interactionId} {
+          allow get: if isSignedIn() && isValidId(roomId) && isValidId(interactionId);
+          allow list: if isSignedIn() && existing().roomId == roomId;
+
+          allow create: if isSignedIn() && isValidId(roomId) && isValidId(interactionId) &&
+                           !isMemberBanned(networkId, request.auth.uid) &&
+                           (!isNetworkInMaintenance(networkId) || isStaffSupportOrAbove(networkId)) &&
+                           incoming().roomId == roomId &&
+                           incoming().networkId == networkId &&
+                           incoming().fromUid == request.auth.uid &&
+                           incoming().keys().hasAll(['roomId', 'networkId', 'fromUid', 'fromName', 'targetUid', 'actionType', 'amount', 'itemId', 'createdAt']) &&
+                           incoming().keys().hasOnly(['roomId', 'networkId', 'fromUid', 'fromName', 'targetUid', 'actionType', 'amount', 'itemId', 'createdAt']) &&
+                           isValidRoomInteraction(incoming());
+
+          allow delete: if isSignedIn() && isValidId(roomId) && isValidId(interactionId) &&
+                           (existing().targetUid == request.auth.uid || existing().fromUid == request.auth.uid);
+        }
+      }
+
+      // --- 2c. SUPPORT TICKETS (Destek Talepleri) ---
+      match /tickets/{ticketId} {
+        allow get: if isSignedIn() && isValidId(networkId) && isValidId(ticketId) &&
+                      (existing().authorUid == request.auth.uid || isStaffSupportOrAbove(networkId));
+        allow list: if isSignedIn() && existing().networkId == networkId;
+
+        allow create: if isSignedIn() && isValidId(networkId) && isValidId(ticketId) &&
+                         !isMemberBanned(networkId, request.auth.uid) &&
+                         incoming().networkId == networkId &&
+                         incoming().authorUid == request.auth.uid &&
+                         incoming().status == 'OPEN' &&
+                         incoming().keys().hasAll(['networkId', 'authorUid', 'authorName', 'subject', 'message', 'status', 'staffReply', 'repliedBy', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['networkId', 'authorUid', 'authorName', 'subject', 'message', 'status', 'staffReply', 'repliedBy', 'createdAt', 'updatedAt']) &&
+                         isValidSupportTicket(incoming());
+
+        allow update: if isSignedIn() && isValidId(networkId) && isValidId(ticketId) &&
+                         isValidSupportTicket(incoming()) &&
+                         isStaffSupportOrAbove(networkId) &&
+                         incoming().networkId == existing().networkId &&
+                         incoming().authorUid == existing().authorUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'staffReply', 'repliedBy', 'updatedAt']);
+      }
+
+      // --- 2d. PLAYER REPORTS (Oyuncu Raporlari) ---
+      match /reports/{reportId} {
+        allow get: if isSignedIn() && isValidId(networkId) && isValidId(reportId) &&
+                      (existing().reporterUid == request.auth.uid || isStaffModOrAbove(networkId));
+        allow list: if isSignedIn() && existing().networkId == networkId;
+
+        allow create: if isSignedIn() && isValidId(networkId) && isValidId(reportId) &&
+                         !isMemberBanned(networkId, request.auth.uid) &&
+                         incoming().networkId == networkId &&
+                         incoming().reporterUid == request.auth.uid &&
+                         incoming().status == 'PENDING' &&
+                         incoming().keys().hasAll(['networkId', 'reporterUid', 'reporterName', 'targetUid', 'targetName', 'reason', 'status', 'reviewedBy', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['networkId', 'reporterUid', 'reporterName', 'targetUid', 'targetName', 'reason', 'status', 'reviewedBy', 'createdAt', 'updatedAt']) &&
+                         isValidPlayerReport(incoming());
+
+        allow update: if isSignedIn() && isValidId(networkId) && isValidId(reportId) &&
+                         isValidPlayerReport(incoming()) &&
+                         isStaffModOrAbove(networkId) &&
+                         existing().status == 'PENDING' &&
+                         incoming().networkId == existing().networkId &&
+                         incoming().reporterUid == existing().reporterUid &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'reviewedBy', 'updatedAt']);
+      }
+
+      // --- 2e. CREATIVE PLOTS & SKYBLOCK ISLANDS ---
+      match /plots/{plotId} {
+        allow get: if isSignedIn() && isValidId(networkId) && isValidId(plotId);
+        allow list: if isSignedIn() && existing().ownerUid == request.auth.uid;
+
+        allow create: if isSignedIn() && isValidId(networkId) && isValidId(plotId) &&
+                         !isMemberBanned(networkId, request.auth.uid) &&
+                         incoming().networkId == networkId &&
+                         incoming().ownerUid == request.auth.uid &&
+                         incoming().keys().hasAll(['ownerUid', 'networkId', 'mode', 'plotName', 'blocksData', 'islandLevel', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['ownerUid', 'networkId', 'mode', 'plotName', 'blocksData', 'islandLevel', 'updatedAt']) &&
+                         isValidPlayerPlot(incoming());
+
+        allow update: if isSignedIn() && isValidId(networkId) && isValidId(plotId) &&
+                         !isMemberBanned(networkId, request.auth.uid) &&
+                         isValidPlayerPlot(incoming()) &&
+                         (existing().ownerUid == request.auth.uid || isNetworkBuilderOrAbove(networkId)) &&
+                         incoming().networkId == existing().networkId &&
+                         incoming().ownerUid == existing().ownerUid &&
+                         incoming().mode == existing().mode &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['plotName', 'blocksData', 'islandLevel', 'updatedAt']);
+      }
+    }
+  }
+}

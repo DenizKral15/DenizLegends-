@@ -1,0 +1,6 @@
+{
+  "name": "DenizCraft",
+  "description": "DenizCraft (Fight and Build) — Çok oyunculu Minecraft tarzı mini oyunlar, bağımsız ağ sunucuları, rütbe ve seviye sistemi, yetkili paneli ve çevrimdışı bot modu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
